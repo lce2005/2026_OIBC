@@ -1,0 +1,8 @@
+data/
+outputs/
+backup/
+.venv/
+*.zip
+*.parquet
+*.csv
+__pycache__/
