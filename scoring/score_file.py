@@ -8,9 +8,9 @@
 import sys
 from pathlib import Path
 import pandas as pd
-from score import score_preds, check_composition
+from scoring.score import score_preds, check_composition
 
-D = Path(__file__).parent / "data" / "OIBC_2026_DATA" / "handover 2" / "01_participant_dataset"
+D = Path(__file__).resolve().parent.parent / "data" / "OIBC_2026_DATA" / "handover 2" / "01_participant_dataset"
 
 
 def read(path):
