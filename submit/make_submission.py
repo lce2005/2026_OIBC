@@ -4,7 +4,7 @@
 1) 생성+검사: python submit/make_submission.py --round 2 모델이름
    outputs/round2/preds/{모델이름}_test_predictions.csv  (평가 기간 발전소별 예측, 253개소 × 8,760시각)
    outputs/round2/dev_opt/composition_{모델이름}_dev.csv (group/search.py 최적화 배정)
-   → outputs/round2/submissions/{모델이름}_OPT/composition.csv, forecast.csv, info.json
+   → outputs/round2/submissions/{모델이름}_OPT/{모델이름}_OPT_composition.csv, {모델이름}_OPT_forecast.csv, info.json
 2) 검사만:   python submit/make_submission.py --check 폴더   (폴더 안 composition.csv, forecast.csv 검사)
 
 검사 항목은 공식 Q&A 공지 "6. 제출 전 확인" + README 형식:
@@ -41,9 +41,10 @@ def check(folder: Path):
     print(f"검사 대상: {folder}")
 
     # ---- composition.csv
-    cp = folder / "composition.csv"
-    if not cp.is_file():
-        bad("composition.csv 없음"); return finish(folder)
+    cps = sorted(folder.glob("*composition.csv"))
+    if len(cps) != 1:
+        bad(f"폴더에 composition 파일이 정확히 1개여야 함 (지금 {len(cps)}개)"); return finish(folder)
+    cp = cps[0]
     c = pd.read_csv(cp)
     if list(c.columns) != ["site_id", "group"]:
         bad(f"composition 열이 site_id,group 이어야 함: {list(c.columns)}")
@@ -59,9 +60,10 @@ def check(folder: Path):
     n_before = len(problems)
 
     # ---- forecast.csv
-    fp = folder / "forecast.csv"
-    if not fp.is_file():
-        bad("forecast.csv 없음"); return finish(folder)
+    fps = sorted(folder.glob("*forecast.csv"))
+    if len(fps) != 1:
+        bad(f"폴더에 forecast 파일이 정확히 1개여야 함 (지금 {len(fps)}개)"); return finish(folder)
+    fp = fps[0]
     f = pd.read_csv(fp)
     if list(f.columns) != ["group", "ts", "forecast_kwh"]:
         bad(f"forecast 열이 group,ts,forecast_kwh 이어야 함: {list(f.columns)}")
@@ -118,12 +120,13 @@ def make(preds_path: Path, comp_path: Path, out: Path):
     f["ts"] = f["ts"].dt.strftime("%Y-%m-%d %H:%M:%S%z").str.replace(r"(\d\d)(\d\d)$", r"\1:\2", regex=True)
 
     out.mkdir(parents=True, exist_ok=True)
-    comp.sort_values("site_id").to_csv(out / "composition.csv", index=False)
-    f.to_csv(out / "forecast.csv", index=False)
+    # 파일 이름에 폴더 이름을 붙여 제출 내역에서 구분되게 함 (2회차부터)
+    comp.sort_values("site_id").to_csv(out / f"{out.name}_composition.csv", index=False)
+    f.to_csv(out / f"{out.name}_forecast.csv", index=False)
     (out / "info.json").write_text(json.dumps({
         "preds": str(preds_path.relative_to(ROOT)), "composition": str(comp_path.relative_to(ROOT)),
         "made_at": pd.Timestamp.now(tz=KST).isoformat()}, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"생성: {out}/composition.csv, forecast.csv\n")
+    print(f"생성: {out}/{out.name}_composition.csv, {out.name}_forecast.csv\n")
     return out
 
 
