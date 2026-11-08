@@ -23,7 +23,7 @@ import score as sc
 HOLDOUT = (pd.Timestamp("2025-05-01 01:00", tz="Asia/Seoul"), pd.Timestamp("2025-06-01 00:00", tz="Asia/Seoul"))
 
 
-def check(model: str, rdir: Path, sites, smp, ab):
+def check(model: str, rdir: Path, sites, smp, ab, tag: str = ""):
     p = pd.read_csv(rdir / "preds" / f"{model}_holdout_predictions.csv")
     p["site_id"] = p["site_id"].astype(str)
     p["ts"] = sc.to_kst(pd.to_datetime(p["ts"], utc=True))
@@ -39,7 +39,7 @@ def check(model: str, rdir: Path, sites, smp, ab):
     if e["pred_kwh"].isna().any():
         raise ValueError(f"{model}: 실적은 있는데 예측이 없는 행 {int(e['pred_kwh'].isna().sum()):,}개")
 
-    comp = pd.read_csv(rdir / "dev_opt" / f"composition_{model}_dev.csv")
+    comp = pd.read_csv(rdir / "dev_opt" / f"composition_{model}_dev{('_' + tag) if tag else ''}.csv")
     comp["site_id"] = comp["site_id"].astype(str)
     problems = sc.check_composition(comp, sites)
     if problems:
@@ -50,7 +50,7 @@ def check(model: str, rdir: Path, sites, smp, ab):
     err = (e["pred_kwh"] - e["actual_kwh"]).groupby(e["ts"]).sum()
     w = smp.set_index("ts").reindex(err.index)
     lower = float(0.10 * (w["smp"] * w["k"] * err.abs()).sum())   # 한 그룹에 다 넣었을 때 = 더 못 줄이는 선
-    return {"model": model, "holdout_penalty_AB": pen_ab, "holdout_penalty_opt": pen_opt,
+    return {"model": model + (f"_{tag}" if tag else ""), "holdout_penalty_AB": pen_ab, "holdout_penalty_opt": pen_opt,
             "holdout_lower_bound": lower, "reduction_%": 100 * (1 - pen_opt / pen_ab),
             "holdout_mae_kwh": float((e["pred_kwh"] - e["actual_kwh"]).abs().mean())}
 
@@ -59,12 +59,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--round", type=int, required=True)
     ap.add_argument("models", nargs="+")
+    ap.add_argument("--tag", default="", help="배정 파일 꼬리표 (예: deep → composition_{모델}_dev_deep.csv)")
     a = ap.parse_args()
     rdir = ROOT / "outputs" / f"round{a.round}"
     sites = pd.read_csv(sc.DATA_DIR / "sites.csv"); sites["site_id"] = sites["site_id"].astype(str)
     smp = sc.load_smp(sc.DATA_DIR / "train" / "smp.csv")
     ab = sc.default_composition(sites)
-    rows = [check(m, rdir, sites, smp, ab) for m in a.models]
+    rows = [check(m, rdir, sites, smp, ab, a.tag) for m in a.models]
     out = rdir / "holdout" / "holdout_check.csv"; out.parent.mkdir(parents=True, exist_ok=True)
     table = pd.DataFrame(rows)
     if out.exists():

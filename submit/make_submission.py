@@ -135,14 +135,18 @@ if __name__ == "__main__":
     ap.add_argument("--round", type=int, help="제출 회차 (outputs/round{N}/)")
     ap.add_argument("model", nargs="?", help="모델 이름")
     ap.add_argument("--check", type=Path, help="검사만: composition.csv, forecast.csv 가 있는 폴더")
+    ap.add_argument("--tag", default="", help="배정 꼬리표 (예: deep → composition_{모델}_dev_deep.csv, 폴더 {모델}_OPT_deep)")
+    ap.add_argument("--out-round", type=int, help="제출 폴더를 둘 회차 (기본: --round 와 같음)")
     a = ap.parse_args()
     if a.check:
         folder = a.check if a.check.is_absolute() else ROOT / a.check
     elif a.round and a.model:
         rdir = ROOT / "outputs" / f"round{a.round}"
+        odir = ROOT / "outputs" / f"round{a.out_round or a.round}"
+        suffix = f"_{a.tag}" if a.tag else ""
         folder = make(rdir / "preds" / f"{a.model}_test_predictions.csv",
-                      rdir / "dev_opt" / f"composition_{a.model}_dev.csv",
-                      rdir / "submissions" / f"{a.model}_OPT")
+                      rdir / "dev_opt" / f"composition_{a.model}_dev{suffix}.csv",
+                      odir / "submissions" / f"{a.model}_OPT{suffix}")
     else:
         ap.error("--round N 모델이름  또는  --check 폴더 가 필요해요")
     sys.exit(0 if check(folder) else 1)
