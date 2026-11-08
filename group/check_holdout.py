@@ -3,15 +3,14 @@
 배정은 바꾸지 않고 채점만 한다 (5월은 배정 탐색에 쓰지 않음, 일정 계획 4번).
 
 실행 (2026_OIBC 폴더에서):
-  python group/check_holdout.py 모델이름 [모델이름 ...]
-  예) python group/check_holdout.py exp06_lstm_v3 ensemble_v3_lstm6000bp_mlp4000bp
-필요 파일:
-  data/preds/{모델이름}_holdout_predictions.csv   (site_id, ts, pred_kwh, 5월 253개소 × 744시간)
-  outputs/composition_{모델이름}_dev.csv           (group/search.py가 만든 최적화 배정)
+  python group/check_holdout.py --round 2 모델이름 [모델이름 ...]
+필요 파일 (outputs/round{N}/):
+  preds/{모델이름}_holdout_predictions.csv      (site_id, ts, pred_kwh, 5월 253개소 × 744시간)
+  dev_opt/composition_{모델이름}_dev.csv         (group/search.py가 만든 최적화 배정)
 저장:
-  outputs/holdout_check.csv  (모델별 5월 기존 A/B 벌금, 최적화 배정 벌금, 감소율. 실행할 때마다 갱신)
+  outputs/round{N}/holdout/holdout_check.csv  (모델별 5월 기존 A/B 벌금, 최적화 배정 벌금, 감소율. 실행할 때마다 갱신)
 """
-import sys
+import argparse, sys
 from pathlib import Path
 
 import numpy as np
@@ -24,8 +23,8 @@ import score as sc
 HOLDOUT = (pd.Timestamp("2025-05-01 01:00", tz="Asia/Seoul"), pd.Timestamp("2025-06-01 00:00", tz="Asia/Seoul"))
 
 
-def check(model: str, sites, smp, ab):
-    p = pd.read_csv(ROOT / "data" / "preds" / f"{model}_holdout_predictions.csv")
+def check(model: str, rdir: Path, sites, smp, ab):
+    p = pd.read_csv(rdir / "preds" / f"{model}_holdout_predictions.csv")
     p["site_id"] = p["site_id"].astype(str)
     p["ts"] = sc.to_kst(pd.to_datetime(p["ts"], utc=True))
     if p["ts"].min() != HOLDOUT[0] or p["ts"].max() != HOLDOUT[1] or len(p) != 253 * 744:
@@ -40,7 +39,7 @@ def check(model: str, sites, smp, ab):
     if e["pred_kwh"].isna().any():
         raise ValueError(f"{model}: 실적은 있는데 예측이 없는 행 {int(e['pred_kwh'].isna().sum()):,}개")
 
-    comp = pd.read_csv(ROOT / "outputs" / f"composition_{model}_dev.csv")
+    comp = pd.read_csv(rdir / "dev_opt" / f"composition_{model}_dev.csv")
     comp["site_id"] = comp["site_id"].astype(str)
     problems = sc.check_composition(comp, sites)
     if problems:
@@ -57,13 +56,16 @@ def check(model: str, sites, smp, ab):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(__doc__); sys.exit(1)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--round", type=int, required=True)
+    ap.add_argument("models", nargs="+")
+    a = ap.parse_args()
+    rdir = ROOT / "outputs" / f"round{a.round}"
     sites = pd.read_csv(sc.DATA_DIR / "sites.csv"); sites["site_id"] = sites["site_id"].astype(str)
     smp = sc.load_smp(sc.DATA_DIR / "train" / "smp.csv")
     ab = sc.default_composition(sites)
-    rows = [check(m, sites, smp, ab) for m in sys.argv[1:]]
-    out = ROOT / "outputs" / "holdout_check.csv"
+    rows = [check(m, rdir, sites, smp, ab) for m in a.models]
+    out = rdir / "holdout" / "holdout_check.csv"; out.parent.mkdir(parents=True, exist_ok=True)
     table = pd.DataFrame(rows)
     if out.exists():
         old = pd.read_csv(out)

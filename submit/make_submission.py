@@ -1,11 +1,11 @@
 """
 제출 파일 생성·검사.
 
-1) 검사만:   python submit/make_submission.py --check 폴더        (폴더 안 composition.csv, forecast.csv 검사)
-2) 생성+검사: python submit/make_submission.py --preds 예측.csv --composition 배정.csv --out 폴더이름
-   예측.csv : 평가 기간 발전소별 예측 (site_id, ts, pred_kwh), 253개소 × 8,760시각
-   배정.csv : site_id, group (G1/G2). 생략하면 기존 A/B 배정
-   → outputs/submissions/폴더이름/composition.csv, forecast.csv, info.json
+1) 생성+검사: python submit/make_submission.py --round 2 모델이름
+   outputs/round2/preds/{모델이름}_test_predictions.csv  (평가 기간 발전소별 예측, 253개소 × 8,760시각)
+   outputs/round2/dev_opt/composition_{모델이름}_dev.csv (group/search.py 최적화 배정)
+   → outputs/round2/submissions/{모델이름}_OPT/composition.csv, forecast.csv, info.json
+2) 검사만:   python submit/make_submission.py --check 폴더   (폴더 안 composition.csv, forecast.csv 검사)
 
 검사 항목은 공식 Q&A 공지 "6. 제출 전 확인" + README 형식:
   253개소가 중복·누락 없이 G1/G2 하나씩 / 두 그룹 모두 20,000kW 이상
@@ -93,7 +93,7 @@ def finish(folder):
     return True
 
 
-def make(preds_path: Path, comp_path, out_name: str):
+def make(preds_path: Path, comp_path: Path, out: Path):
     sites = pd.read_csv(sc.DATA_DIR / "sites.csv")
     smp = pd.read_csv(sc.DATA_DIR / "smp.csv")
     smp_ts = sc.to_kst(pd.to_datetime(smp["ts"]))
@@ -108,7 +108,7 @@ def make(preds_path: Path, comp_path, out_name: str):
     neg = int((p.pred_kwh < 0).sum())
     if neg: print(f"  음수 예측 {neg}행 → 0으로 올림"); p["pred_kwh"] = p.pred_kwh.clip(lower=0)
 
-    comp = pd.read_csv(comp_path)[["site_id", "group"]] if comp_path else sc.default_composition(sites)
+    comp = pd.read_csv(comp_path)[["site_id", "group"]]
     comp["site_id"] = comp["site_id"].astype(str)
     problems_c = sc.check_composition(comp, sites.assign(site_id=sites.site_id.astype(str)))
     if problems_c: raise ValueError(f"배정 규칙 위반: {problems_c}")
@@ -117,12 +117,11 @@ def make(preds_path: Path, comp_path, out_name: str):
            .rename(columns={"pred_kwh": "forecast_kwh"}).sort_values(["group", "ts"]))
     f["ts"] = f["ts"].dt.strftime("%Y-%m-%d %H:%M:%S%z").str.replace(r"(\d\d)(\d\d)$", r"\1:\2", regex=True)
 
-    out = ROOT / "outputs" / "submissions" / out_name
     out.mkdir(parents=True, exist_ok=True)
     comp.sort_values("site_id").to_csv(out / "composition.csv", index=False)
     f.to_csv(out / "forecast.csv", index=False)
     (out / "info.json").write_text(json.dumps({
-        "preds": str(preds_path), "composition": str(comp_path) if comp_path else "sites.csv current_group (A→G1, B→G2)",
+        "preds": str(preds_path.relative_to(ROOT)), "composition": str(comp_path.relative_to(ROOT)),
         "made_at": pd.Timestamp.now(tz=KST).isoformat()}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"생성: {out}/composition.csv, forecast.csv\n")
     return out
@@ -130,15 +129,17 @@ def make(preds_path: Path, comp_path, out_name: str):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--check", type=Path, help="검사할 폴더 (composition.csv, forecast.csv)")
-    ap.add_argument("--preds", type=Path, help="평가 기간 발전소별 예측 (site_id, ts, pred_kwh)")
-    ap.add_argument("--composition", type=Path, default=None, help="배정 파일 (site_id, group). 생략 시 기존 A/B")
-    ap.add_argument("--out", default=None, help="outputs/submissions/ 아래 폴더 이름")
+    ap.add_argument("--round", type=int, help="제출 회차 (outputs/round{N}/)")
+    ap.add_argument("model", nargs="?", help="모델 이름")
+    ap.add_argument("--check", type=Path, help="검사만: composition.csv, forecast.csv 가 있는 폴더")
     a = ap.parse_args()
-    if a.preds:
-        folder = make(a.preds, a.composition, a.out or a.preds.stem)
-    elif a.check:
+    if a.check:
         folder = a.check if a.check.is_absolute() else ROOT / a.check
+    elif a.round and a.model:
+        rdir = ROOT / "outputs" / f"round{a.round}"
+        folder = make(rdir / "preds" / f"{a.model}_test_predictions.csv",
+                      rdir / "dev_opt" / f"composition_{a.model}_dev.csv",
+                      rdir / "submissions" / f"{a.model}_OPT")
     else:
-        ap.error("--check 폴더 또는 --preds 예측.csv 중 하나는 필요")
+        ap.error("--round N 모델이름  또는  --check 폴더 가 필요해요")
     sys.exit(0 if check(folder) else 1)

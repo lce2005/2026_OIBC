@@ -10,11 +10,11 @@
 실행 (2026_OIBC 폴더에서):
   python baseline/run_baseline.py              # 검증 기간 (기본)
   python baseline/run_baseline.py --period holdout   # 최종 검증 기간 (마지막에만)
-  라운드별 예측은 outputs/baseline_{period}_round{10,17}.parquet에 저장되고, 있으면 재사용한다
+  라운드별 예측은 outputs/baseline/baseline_{period}_round{10,17}.parquet에 저장되고, 있으면 재사용한다
   (학습 기간이나 모델을 바꾸면 이 파일들을 지우고 다시 실행).
 저장:
-  outputs/baseline_{period}_errors.csv  (site_id, ts, actual_kwh, pred_kwh, error_kwh)
-  outputs/baseline_{period}_score.json
+  outputs/baseline/baseline_{period}_errors.csv  (site_id, ts, actual_kwh, pred_kwh, error_kwh)
+  outputs/baseline/baseline_{period}_score.json
 """
 import argparse, json, sys, time
 from pathlib import Path
@@ -46,7 +46,7 @@ def main():
     ap.add_argument("--one-round", action="store_true",
                     help="라운드 하나만 새로 학습하고 멈춤 (실행 시간 제한이 있을 때)")
     args = ap.parse_args()
-    out = ROOT / "outputs"; out.mkdir(exist_ok=True)
+    out = ROOT / "outputs" / "baseline"; out.mkdir(parents=True, exist_ok=True)
     D = sc.DATA_DIR
     (tr_s, tr_e), (ev_s, ev_e) = SPLIT["train"], SPLIT[args.period]
 

@@ -17,11 +17,12 @@
   (찾을 때 안 본 날에서도 기존 배정보다 나은지 확인)
 
 실행 (2026_OIBC 폴더에서):
-  python group/search.py                                   # 기준선 오차표 사용
-  python group/search.py --errors outputs/다른모델_dev_errors.csv --restarts 20
-저장:
-  outputs/composition_{이름}.csv   (site_id, group)  ← 오차표 파일 이름에서 따옴
-  outputs/composition_{이름}.json  (점수 요약)
+  python group/search.py --round 2 모델이름            # outputs/round2/dev_opt/{모델이름}_dev_errors.csv 를 읽음
+  python group/search.py --baseline                    # outputs/baseline/baseline_dev_errors.csv
+  옵션: --restarts 20 (무작위 출발점 수), --seed 1
+저장 (오차표와 같은 폴더):
+  composition_{모델이름}_dev.csv   (site_id, group)
+  composition_{모델이름}_dev.json  (점수 요약)
 """
 import argparse, json, sys, time
 from pathlib import Path
@@ -122,12 +123,18 @@ def search(E, w, cap, start, restarts, seed):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--errors", default="outputs/baseline_dev_errors.csv")
+    ap.add_argument("--round", type=int, help="제출 회차 (outputs/round{N}/dev_opt/)")
+    ap.add_argument("model", nargs="?", help="모델 이름 ({이름}_dev_errors.csv)")
+    ap.add_argument("--baseline", action="store_true", help="outputs/baseline/baseline_dev_errors.csv 사용")
     ap.add_argument("--restarts", type=int, default=10, help="무작위 출발점 개수")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
-    path = Path(args.errors)
-    path = path if path.is_absolute() else ROOT / path
+    if args.baseline:
+        path = ROOT / "outputs" / "baseline" / "baseline_dev_errors.csv"
+    elif args.round and args.model:
+        path = ROOT / "outputs" / f"round{args.round}" / "dev_opt" / f"{args.model}_dev_errors.csv"
+    else:
+        ap.error("--round N 모델이름  또는  --baseline 이 필요해요")
     name = path.stem.replace("_errors", "")
 
     df, sites, smp, E, w, cap, ts = load(path)
@@ -167,7 +174,7 @@ def main():
     if abs(new["penalty"] - p) > 1:
         raise ValueError(f"탐색 점수({p:,.0f})와 공통 점수 코드({new['penalty']:,.0f})가 달라요")
 
-    out = ROOT / "outputs"
+    out = path.parent
     comp.to_csv(out / f"composition_{name}.csv", index=False)
     caps = comp.assign(cap=cap).groupby("group").cap.sum()
     moved = int((g1 != ab).sum())
