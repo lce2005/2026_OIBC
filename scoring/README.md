@@ -27,6 +27,20 @@ python scoring/score.py --test                       # 작은 예제로 계산 �
 
 **출력:** 정산금, 벌금, 가중치 없는 절대오차 합(동점 처리용)
 
+## 예측 파일 → 오차표 (`make_errors.py`)
+
+모델 담당이 준 예측 파일에 공통 정답을 붙여 팀 전달 형식 오차표를 만들고, 기본 배정 벌금을 계산합니다.
+모든 모델의 정답이 한곳(`score.py`)에서 나오므로 비교가 어긋나지 않습니다.
+
+```
+python scoring/make_errors.py --round 2 모델이름 [모델이름 ...]
+```
+
+| 입력 | `outputs/round2/preds/{모델이름}_dev_predictions.csv` (`site_id, ts, pred_kwh`, 검증 기간) |
+| --- | --- |
+| 출력 | `outputs/round2/dev_opt/{모델이름}_dev_errors.csv` (`site_id, ts, actual_kwh, pred_kwh, error_kwh`) |
+| 출력 | `outputs/round2/dev_opt/model_scores_dev.csv` (모델별 MAE·RMSE·기본 배정 벌금·정산금 표, 실행마다 갱신) |
+
 ## 계산식
 
 ```
