@@ -10,7 +10,7 @@
 | `scoring/` | 공통 점수 계산(`score.py`), 예측 → 오차표(`make_errors.py`) | 2 |
 | `baseline/` | 공식 baseline을 팀 확정 기간으로 돌려 기준 점수 산출 | 3 |
 | `group/` | 그룹 배정 탐색(`search.py`), 탐색 강화(`search_deep.py`), 5월 확인(`check_holdout.py`) | 3, 5, 6 |
-| `submit/` | 제출 파일 생성·형식 검사(`make_submission.py`) | 5, 6 |
+| `submit/` | 제출 파일 생성·형식 검사(`make_submission.py`), 제출 직전 최종 점검(`final_check.py`) | 5, 6 |
 | `colab/` | 그룹 탐색 코랩용 (`search_colab.py`, `search_deep_colab.py`) | — |
 
 데이터(`data/`)와 결과(`outputs/`)는 올리지 않습니다 (`.gitignore`).
@@ -24,6 +24,7 @@ python scoring/make_errors.py   --round N 모델이름   # ① 3~4월 오차표 
 python group/search.py          --round N 모델이름   # ② 3~4월 오차로 최적화 배정 탐색 (약 7분)
 python group/check_holdout.py   --round N 모델이름   # ③ 5월 예측에 배정 적용해 기존 A/B와 비교
 python submit/make_submission.py --round N 모델이름  # ④ test 예측을 배정대로 합산 → 제출 파일 + 형식 검사
+python submit/final_check.py outputs/roundN/submissions/모델이름_OPT   # ⑤ 제출 직전: 형식·출처·5월 확인 한 번에
 ```
 
 ```
