@@ -8,7 +8,9 @@
   preds/{모델이름}_holdout_predictions.csv      (site_id, ts, pred_kwh, 5월 253개소 × 744시간)
   dev_opt/composition_{모델이름}_dev.csv         (group/search.py가 만든 최적화 배정)
 저장:
-  outputs/round{N}/holdout/holdout_check.csv  (모델별 5월 기존 A/B 벌금, 최적화 배정 벌금, 감소율. 실행할 때마다 갱신)
+  outputs/round{N}/holdout/holdout_check.csv  (모델별 5월 기존 A/B 벌금, 최적화 배정 벌금, 최저와의 거리. 실행할 때마다 갱신)
+보는 기준: 5월 벌금이 '이론상 최저(한 그룹에 다 넣은 경우)'에서 얼마나 떨어져 있나 (gap_to_lower).
+  작을수록 안 본 달에서도 잘 맞는 배정. 'A/B보다 나은가'만 보면 배정끼리 우열을 못 가림
 """
 import argparse, sys
 from pathlib import Path
@@ -52,6 +54,9 @@ def check(model: str, rdir: Path, sites, smp, ab, tag: str = ""):
     lower = float(0.10 * (w["smp"] * w["k"] * err.abs()).sum())   # 한 그룹에 다 넣었을 때 = 더 못 줄이는 선
     return {"model": model + (f"_{tag}" if tag else ""), "holdout_penalty_AB": pen_ab, "holdout_penalty_opt": pen_opt,
             "holdout_lower_bound": lower, "reduction_%": 100 * (1 - pen_opt / pen_ab),
+            "gap_to_lower": pen_opt - lower,                       # 최저와의 거리 (원). 작을수록 5월에 잘 맞는 배정
+            "gap_to_lower_%": 100 * (pen_opt / lower - 1),         # 최저 대비 몇 % 위에 있나
+            "gap_AB_to_lower": pen_ab - lower,                     # 참고: 기존 A/B는 최저에서 얼마나 떨어져 있나
             "holdout_mae_kwh": float((e["pred_kwh"] - e["actual_kwh"]).abs().mean())}
 
 
@@ -71,9 +76,11 @@ if __name__ == "__main__":
     if out.exists():
         old = pd.read_csv(out)
         table = pd.concat([old[~old.model.isin(table.model)], table], ignore_index=True)
-    table = table.sort_values("holdout_penalty_opt").reset_index(drop=True)
+    table = table.sort_values("gap_to_lower").reset_index(drop=True)
     table.to_csv(out, index=False, encoding="utf-8-sig")
-    print(f"{'모델':52s} {'5월 기존A/B':>12s} {'5월 최적화':>12s} {'감소':>6s} {'더 못줄이는 선':>13s} {'MAE':>7s}")
-    for r in table.itertuples():
-        print(f"{r.model:52s} {r.holdout_penalty_AB:>12,.0f} {r.holdout_penalty_opt:>12,.0f} {r._5:>5.1f}% {r.holdout_lower_bound:>13,.0f} {r.holdout_mae_kwh:>7.3f}")
+    print(f"{'모델':44s} {'5월 기존A/B':>12s} {'5월 최적화':>12s} {'5월 최저':>12s} {'최저와의 거리':>13s} {'(%)':>6s} {'A/B의 거리':>11s}")
+    for _, r in table.iterrows():
+        print(f"{r['model']:44s} {r['holdout_penalty_AB']:>12,.0f} {r['holdout_penalty_opt']:>12,.0f} {r['holdout_lower_bound']:>12,.0f} "
+              f"{r['gap_to_lower']:>13,.0f} {r['gap_to_lower_%']:>5.2f}% {r['gap_AB_to_lower']:>11,.0f}")
+    print("\n읽는 법: '최저와의 거리'가 작을수록 5월(안 본 달)에서 잘 맞는 배정. 같은 모델의 배정끼리는 이 값으로 비교")
     print(f"\n저장: {out.relative_to(ROOT)}")
