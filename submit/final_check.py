@@ -18,6 +18,11 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scoring")); sys.path.insert(0, str(ROOT / "submit"))
 import score as sc
+
+
+def rdir_of(path):
+    """outputs/roundN/preds/x.csv → outputs/roundN"""
+    return path.parent.parent
 import make_submission as ms
 
 notes = []
@@ -49,11 +54,23 @@ def main(folder: Path):
         m = sub_c.merge(comp, on="site_id", suffixes=("_sub", "_src"))
         (ok if (m.group_sub == m.group_src).all() else warn)("제출 composition = 배정 파일" + ("" if (m.group_sub == m.group_src).all() else " 아님!"))
         p = pd.read_csv(preds_p); p["site_id"] = p.site_id.astype(str); p["ts"] = sc.to_kst(pd.to_datetime(p.ts, utc=True))
-        f = p.merge(comp, on="site_id").groupby(["group", "ts"]).pred_kwh.sum().clip(lower=0)
+        scale = float(info.get("scale", 1.0))
+        f = (p.assign(pred_kwh=p.pred_kwh.clip(lower=0) * scale).merge(comp, on="site_id")
+               .groupby(["group", "ts"]).pred_kwh.sum())
         sub_f = pd.read_csv(next(folder.glob("*forecast.csv"))); sub_f["ts"] = sc.to_kst(pd.to_datetime(sub_f.ts, utc=True))
         sub_f = sub_f.set_index(["group", "ts"]).forecast_kwh
         diff = float((f.reindex(sub_f.index) - sub_f).abs().max())
-        (ok if diff < 1e-3 else warn)(f"제출 forecast = test 예측을 배정대로 합산한 값 (최대 차이 {diff:.6f} kWh)")
+        (ok if diff < 1e-3 else warn)(f"제출 forecast = test 예측을 배정대로 합산한 값" + (f" × 배율 {scale}" if scale != 1.0 else "") + f" (최대 차이 {diff:.6f} kWh)")
+        if scale != 1.0:
+            cal = rdir_of(preds_p) / "calibration" / "calibration.csv"
+            if cal.is_file():
+                ct = pd.read_csv(cal); r = ct[ct.model == preds_p.name.replace("_test_predictions.csv", "")]
+                if len(r) and r.iloc[0]["5월_검증_통과"] in (True, "True", 1):
+                    ok(f"배율 {scale}: 5월 검증 통과 모델 (3~4월 배율 적용 시 5월 벌금 {r.iloc[0]['5월_변화_%']:+.2f}%, 권장 3~5월 배율 {r.iloc[0]['배율_3~5월']:.3f})")
+                else:
+                    warn(f"배율 {scale}: 이 모델은 5월 검증을 통과하지 못했거나 기록이 없음 (scoring/calibrate.py 확인)")
+            else:
+                warn(f"배율 {scale} 적용했지만 보정 기록(calibration.csv) 없음 → scoring/calibrate.py --round N 모델 실행 권장")
     print(f"  만든 시각: {info.get('made_at', '?')}")
 
     print("\n3. 배정 품질")

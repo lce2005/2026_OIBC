@@ -6,6 +6,7 @@
    outputs/round2/dev_opt/composition_{모델이름}_dev.csv (group/search.py 최적화 배정)
    → outputs/round2/submissions/{모델이름}_OPT/{모델이름}_OPT_composition.csv, {모델이름}_OPT_forecast.csv, info.json
 2) 검사만:   python submit/make_submission.py --check 폴더   (폴더 안 composition.csv, forecast.csv 검사)
+옵션: --tag h (배정 꼬리표), --scale 0.975 (예측에 배율을 곱함 → 폴더 {모델}_OPT_h_x0.975, info.json에 기록)
 
 검사 항목은 공식 Q&A 공지 "6. 제출 전 확인" + README 형식:
   253개소가 중복·누락 없이 G1/G2 하나씩 / 두 그룹 모두 20,000kW 이상
@@ -95,7 +96,7 @@ def finish(folder):
     return True
 
 
-def make(preds_path: Path, comp_path: Path, out: Path):
+def make(preds_path: Path, comp_path: Path, out: Path, scale: float = 1.0):
     sites = pd.read_csv(sc.DATA_DIR / "sites.csv")
     smp = pd.read_csv(sc.DATA_DIR / "smp.csv")
     smp_ts = sc.to_kst(pd.to_datetime(smp["ts"]))
@@ -109,6 +110,11 @@ def make(preds_path: Path, comp_path: Path, out: Path):
     if p.pred_kwh.isna().any() or not np.isfinite(p.pred_kwh).all(): raise ValueError("예측에 빈 값/무한대")
     neg = int((p.pred_kwh < 0).sum())
     if neg: print(f"  음수 예측 {neg}행 → 0으로 올림"); p["pred_kwh"] = p.pred_kwh.clip(lower=0)
+    if scale != 1.0:
+        # 예측 수준 보정: 모델 예측이 실제보다 일관되게 많거나 적을 때 배율을 곱함 (scoring/calibrate.py 로 정한 값)
+        if not (0.5 <= scale <= 1.5): raise ValueError(f"배율 {scale} 이 이상해요 (0.5~1.5 범위만)")
+        p["pred_kwh"] = p.pred_kwh * scale
+        print(f"  예측에 배율 {scale} 적용")
 
     comp = pd.read_csv(comp_path)[["site_id", "group"]]
     comp["site_id"] = comp["site_id"].astype(str)
@@ -125,7 +131,7 @@ def make(preds_path: Path, comp_path: Path, out: Path):
     f.to_csv(out / f"{out.name}_forecast.csv", index=False)
     (out / "info.json").write_text(json.dumps({
         "preds": str(preds_path.relative_to(ROOT)), "composition": str(comp_path.relative_to(ROOT)),
-        "made_at": pd.Timestamp.now(tz=KST).isoformat()}, ensure_ascii=False, indent=2), encoding="utf-8")
+        "scale": scale, "made_at": pd.Timestamp.now(tz=KST).isoformat()}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"생성: {out}/{out.name}_composition.csv, {out.name}_forecast.csv\n")
     return out
 
@@ -137,6 +143,7 @@ if __name__ == "__main__":
     ap.add_argument("--check", type=Path, help="검사만: composition.csv, forecast.csv 가 있는 폴더")
     ap.add_argument("--tag", default="", help="배정 꼬리표 (예: deep → composition_{모델}_dev_deep.csv, 폴더 {모델}_OPT_deep)")
     ap.add_argument("--out-round", type=int, help="제출 폴더를 둘 회차 (기본: --round 와 같음)")
+    ap.add_argument("--scale", type=float, default=1.0, help="예측에 곱할 배율 (예: 0.975 → 폴더 {모델}_OPT_h_x0.975). scoring/calibrate.py 로 정함")
     a = ap.parse_args()
     if a.check:
         folder = a.check if a.check.is_absolute() else ROOT / a.check
@@ -144,9 +151,10 @@ if __name__ == "__main__":
         rdir = ROOT / "outputs" / f"round{a.round}"
         odir = ROOT / "outputs" / f"round{a.out_round or a.round}"
         suffix = f"_{a.tag}" if a.tag else ""
+        ssuffix = f"_x{a.scale:g}" if a.scale != 1.0 else ""
         folder = make(rdir / "preds" / f"{a.model}_test_predictions.csv",
                       rdir / "dev_opt" / f"composition_{a.model}_dev{suffix}.csv",
-                      odir / "submissions" / f"{a.model}_OPT{suffix}")
+                      odir / "submissions" / f"{a.model}_OPT{suffix}{ssuffix}", scale=a.scale)
     else:
         ap.error("--round N 모델이름  또는  --check 폴더 가 필요해요")
     sys.exit(0 if check(folder) else 1)
