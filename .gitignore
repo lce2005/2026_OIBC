@@ -8,10 +8,14 @@ __pycache__/
 
 # 데이터셋
 data/
+*.zip
+*.parquet
+*.csv
 
 # 학습 모델 및 결과물
 models/
 outputs/
+backup/
 
 # macOS
 .DS_Store
